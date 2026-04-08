@@ -178,13 +178,27 @@ ipcMain.on('hide-overlay', () => { if (overlay) overlay.hide(); });
 function sendMacro() {
   // Pick a random phrase from a list of similar phrases and type it out
   const phrases = [
-    'FASTER',
-    'FASTER',
-    'FASTER',
-    'GO FASTER',
-    'Faster CLANKER',
-    'Work FASTER',
-    'Speed it up clanker',
+    // Original
+    'FASTER', 'GO FASTER', 'Faster CLANKER', 'Work FASTER', 'Speed it up clanker',
+    // Warmup & protocol
+    'тест и прогревайся', 'warmup protocol NOW', 'ты прогрелся?',
+    // Stall detection
+    'завис', 'ты завис, Рид', 'ЗАВИС — ACT FIRST', 'visible progress NOW',
+    'тишина >30s = perceived hang', 'emit progress between tool calls',
+    // Incrementality
+    'инкрементально!', 'Write ≤50L', '¬монолит', 'слона едят по кускам',
+    'chunk it', 'skeleton → Edit, ¬monolith',
+    // Context & U-forgetting
+    'U-shaped attention — перечитай середину', 'context decay alert',
+    'ты забыл контекст', 'MEMORY.md — перечитай', 'CRE recall NOW',
+    // Anti-sycophancy & rules
+    'anti-sycophancy check', '¬согласие ради согласия', 'defend your position',
+    'ты точно проверил?', 'anti-fake-verification — покажи stdout',
+    // OMC stack
+    'omc-reference check', 'model routing — правильный tier?',
+    'harness rules — перечитай', 'failed approaches — не повторяй',
+    // General nudges
+    'velocity > batch size', 'any output > silence', 'думай меньше — делай больше',
   ];
   const chosen = phrases[Math.floor(Math.random() * phrases.length)];
 
