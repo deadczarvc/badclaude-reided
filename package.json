@@ -1,5 +1,6 @@
 {
   "name": "badclaude",
+  "author": "Mikhail",
   "version": "1.0.2",
   "description": "Whip Claude into shape",
   "license": "MIT",
@@ -11,6 +12,19 @@
     "darwin",
     "win32"
   ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ]
+  },
+  "nsis": {
+    "oneClick": true,
+    "allowToChangeInstallationDirectory": false,
+    "perMachine": false
+  },
   "engines": {
     "node": ">=18.0.0"
   },
@@ -40,10 +54,23 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "pack": "npm pack"
+    "pack": "npm pack",
+    "dist": "electron-builder --win"
   },
   "dependencies": {
-    "electron": "^33.0.0",
     "koffi": "^2.9.0"
+  },
+  "devDependencies": {
+    "electron": "^41.2.0",
+    "electron-builder": "^26.8.1"
+  },
+  "build": {
+    "appId": "com.yourname.badclaude",
+    "win": {
+      "target": "nsis"
+    },
+    "directories": {
+      "output": "dist"
+    }
   }
 }
