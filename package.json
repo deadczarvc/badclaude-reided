@@ -40,10 +40,23 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron .",
-    "pack": "npm pack"
+    "pack": "npm pack",
+    "dist": "electron-builder --win"
   },
   "dependencies": {
-    "electron": "^33.0.0",
+    "electron": "^42.0.0",
     "koffi": "^2.9.0"
+  },
+  "build": {
+    "appId": "com.yourname.badclaude",
+    "win": {
+      "target": "nsis"
+    },
+    "directories": {
+      "output": "dist"
+    }
+  },
+  "devDependencies": {
+    "electron-builder": "^26.8.1"
   }
 }
