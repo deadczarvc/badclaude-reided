@@ -26,7 +26,7 @@
     "perMachine": false
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.12.0"
   },
   "keywords": [
     "electron",
@@ -36,12 +36,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/GitFrog1111/badclaude.git"
+    "url": "git+https://github.com/deadczarvc/badclaude-reided.git"
   },
   "bugs": {
-    "url": "https://github.com/GitFrog1111/badclaude/issues"
+    "url": "https://github.com/deadczarvc/badclaude-reided/issues"
   },
-  "homepage": "https://github.com/GitFrog1111/badclaude#readme",
+  "homepage": "https://github.com/deadczarvc/badclaude-reided#readme",
   "files": [
     "main.js",
     "preload.js",
@@ -58,11 +58,8 @@
     "dist": "electron-builder --win"
   },
   "dependencies": {
+    "electron": "^42.0.0",
     "koffi": "^2.9.0"
-  },
-  "devDependencies": {
-    "electron": "^41.2.0",
-    "electron-builder": "^26.8.1"
   },
   "build": {
     "appId": "com.yourname.badclaude",
@@ -72,5 +69,8 @@
     "directories": {
       "output": "dist"
     }
+  },
+  "devDependencies": {
+    "electron-builder": "^26.8.1"
   }
 }

@@ -89,7 +89,15 @@ const WHIP_CRACK_SOUNDS = ['sounds/A.mp3', 'sounds/B.mp3', 'sounds/C.mp3', 'soun
 
 document.addEventListener('mousemove', e => { mouseX = e.clientX; mouseY = e.clientY; });
 document.addEventListener('mousedown', () => {
-  if (whip && !dropping) dropping = true;
+  if (whip && !dropping) {
+    // Force crack on click: play sound, send macro, THEN drop
+    const now = Date.now();
+    if (now - whipSpawnTime >= P.firstCrackGraceMs) {
+      playCrackSound();
+      window.bridge.whipCrack();
+    }
+    dropping = true;
+  }
 });
 
 // ── Whip creation ───────────────────────────────────────────────────────────
@@ -362,7 +370,7 @@ function update() {
     if (now - whipSpawnTime >= P.firstCrackGraceMs && now - lastCrackTime > P.crackCooldownMs) {
       lastCrackTime = now;
       playCrackSound();
-      window.bridge.whipCrack();
+      // ¬(whipCrack) here — physics crack = sound only. Macro fires on LMB click only.
     }
   }
 

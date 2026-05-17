@@ -1,21 +1,40 @@
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, screen, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
 
+const debugLogPath = path.join(os.tmpdir(), 'badclaude-debug.log');
+function safeDebugLog(message) {
+  try {
+    fs.appendFileSync(debugLogPath, message);
+  } catch {
+    // Logging must never break tray startup or macro dispatch.
+  }
+}
+
 // ── Win32 FFI (Windows only) ────────────────────────────────────────────────
-let keybd_event, VkKeyScanA;
+let keybd_event, VkKeyScanA, GetForegroundWindow, SetForegroundWindow;
+let LoadKeyboardLayoutA, ActivateKeyboardLayout, GetKeyboardLayout, PostMessageA;
+let savedForegroundHwnd = null;
 if (process.platform === 'win32') {
   try {
     const koffi = require('koffi');
     const user32 = koffi.load('user32.dll');
     keybd_event = user32.func('void __stdcall keybd_event(uint8_t bVk, uint8_t bScan, uint32_t dwFlags, uintptr_t dwExtraInfo)');
     VkKeyScanA = user32.func('int16_t __stdcall VkKeyScanA(int ch)');
+    GetForegroundWindow = user32.func('void* __stdcall GetForegroundWindow()');
+    SetForegroundWindow = user32.func('int __stdcall SetForegroundWindow(void* hWnd)');
+    GetKeyboardLayout = user32.func('void* __stdcall GetKeyboardLayout(uint32_t idThread)');
+    LoadKeyboardLayoutA = user32.func('void* __stdcall LoadKeyboardLayoutA(const char* pwszKLID, uint32_t Flags)');
+    ActivateKeyboardLayout = user32.func('void* __stdcall ActivateKeyboardLayout(void* hkl, uint32_t Flags)');
+    PostMessageA = user32.func('int __stdcall PostMessageA(void* hWnd, uint32_t Msg, uintptr_t wParam, intptr_t lParam)');
   } catch (e) {
     console.warn('koffi not available – macro sending disabled', e.message);
+    safeDebugLog(`[${new Date().toISOString()}] koffi FAIL: ${e.message}\n`);
   }
 }
+safeDebugLog(`[${new Date().toISOString()}] koffi loaded: keybd_event=${!!keybd_event}, SetFG=${!!SetForegroundWindow}, PostMsg=${!!PostMessageA}\n`);
 
 // ── Globals ─────────────────────────────────────────────────────────────────
 let tray, overlay;
@@ -114,6 +133,17 @@ async function getTrayIcon() {
   return createTrayIconFallback();
 }
 
+// ── Track foreground window (captures Warp hwnd before tray click steals it)
+let fgPollInterval = null;
+function startForegroundPoll() {
+  if (!GetForegroundWindow) return;
+  fgPollInterval = setInterval(() => {
+    if (overlay && overlay.isVisible()) return; // don't update while whip is active
+    const hwnd = GetForegroundWindow();
+    if (hwnd) savedForegroundHwnd = hwnd;
+  }, 500);
+}
+
 // ── Overlay window ──────────────────────────────────────────────────────────
 function createOverlay() {
   const { bounds } = screen.getPrimaryDisplay();
@@ -154,6 +184,7 @@ function toggleOverlay() {
     overlay.webContents.send('drop-whip');
     return;
   }
+  // hwnd already tracked by foreground poll — no capture needed here
   if (!overlay) createOverlay();
   overlay.show();
   if (overlayReady) {
@@ -166,6 +197,8 @@ function toggleOverlay() {
 
 // ── IPC ─────────────────────────────────────────────────────────────────────
 ipcMain.on('whip-crack', () => {
+  // Hide overlay BEFORE macro — prevents alwaysOnTop from intercepting keystrokes
+  if (overlay) overlay.hide();
   try {
     sendMacro();
   } catch (err) {
@@ -209,30 +242,52 @@ function sendMacro() {
   }
 }
 
-function sendMacroWindows(text) {
-  if (!keybd_event || !VkKeyScanA) return;
-  const tapKey = vk => {
-    keybd_event(vk, 0, 0, 0);
-    keybd_event(vk, 0, KEYUP, 0);
+function makeSendInput(user32, koffi) {
+  const SendInput = user32.func('uint32_t __stdcall SendInput(uint32_t cInputs, uint8_t* pInputs, int cbSize)');
+  return function(vk, flags) {
+    const buf = Buffer.alloc(40, 0);
+    buf.writeUInt32LE(1, 0);       // type = INPUT_KEYBOARD
+    buf.writeUInt16LE(vk, 8);      // wVk
+    buf.writeUInt32LE(flags, 12);  // dwFlags
+    SendInput(1, buf, 40);
   };
-  const tapChar = ch => {
-    const packed = VkKeyScanA(ch.charCodeAt(0));
-    if (packed === -1) return;
-    const vk = packed & 0xff;
-    const shiftState = (packed >> 8) & 0xff;
-    if (shiftState & 1) keybd_event(0x10, 0, 0, 0); // Shift down
-    tapKey(vk);
-    if (shiftState & 1) keybd_event(0x10, 0, KEYUP, 0); // Shift up
-  };
+}
 
-  // Ctrl+C (interrupt)
-  keybd_event(VK_CONTROL, 0, 0, 0);
-  keybd_event(VK_C, 0, 0, 0);
-  keybd_event(VK_C, 0, KEYUP, 0);
-  keybd_event(VK_CONTROL, 0, KEYUP, 0);
-  for (const ch of text) tapChar(ch);
-  keybd_event(VK_RETURN, 0, 0, 0);
-  keybd_event(VK_RETURN, 0, KEYUP, 0);
+let sendInput = null;
+if (process.platform === 'win32') {
+  try {
+    const koffi = require('koffi');
+    const u32 = koffi.load('user32.dll');
+    sendInput = makeSendInput(u32, koffi);
+  } catch (e) { /* fallback to keybd_event */ }
+}
+
+function sendMacroWindows(text) {
+  const send = sendInput || null;
+  if (!send && !keybd_event) return;
+  safeDebugLog(`[${new Date().toISOString()}] sendMacro: SI=${!!send} hwnd=${!!savedForegroundHwnd} text="${text}"\n`);
+
+  clipboard.writeText(text);
+
+  if (SetForegroundWindow && savedForegroundHwnd) {
+    SetForegroundWindow(savedForegroundHwnd);
+  }
+
+  const KEYDOWN = 0, KEYUP_F = 0x0002;
+  const VK_CTRL = 0x11, VK_V = 0x56, VK_RETURN = 0x0D;
+  const key = send || ((vk, fl) => keybd_event(vk, 0, fl, 0));
+
+  setTimeout(() => {
+    key(VK_CTRL, KEYDOWN);
+    key(VK_V, KEYDOWN);
+    key(VK_V, KEYUP_F);
+    key(VK_CTRL, KEYUP_F);
+
+    setTimeout(() => {
+      key(VK_RETURN, KEYDOWN);
+      key(VK_RETURN, KEYUP_F);
+    }, 150);
+  }, 400);
 }
 
 function sendMacroMac(text) {
@@ -255,6 +310,7 @@ function sendMacroMac(text) {
 
 // ── App lifecycle ───────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
+  startForegroundPoll();
   tray = new Tray(await getTrayIcon());
   tray.setToolTip('Bad Claude – click for whip');
   tray.setContextMenu(
